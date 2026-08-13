@@ -1,0 +1,61 @@
+# AI Scalp Trading Agent
+
+A fully automated scalp trading bot that runs 24/7, trading US stocks using real-time market data and Gemini AI decisions — with guardrails, cooldown logic, and automated daily performance reporting.
+
+## What it does
+
+**Live trading loop (runs continuously during market hours):**
+
+1. **Market hours check** — a schedule trigger checks if US market hours are active (9:30 AM–4:00 PM ET); outside hours, nothing runs
+2. **Live quote fetch** — pulls a real-time AAPL quote (bid, ask, spread, sizes, last price) from the Alpaca REST API
+3. **AI decision** — the quote is sent to a Gemini AI agent, which returns a structured decision: BUY, SELL, or HOLD, with confidence score, quantity, entry price, stop-loss, and take-profit
+4. **Guardrail Check** — a 5-condition filter blocks weak signals (low confidence, bad quantity, invalid prices)
+5. **Cooldown Filter** — blocks the same signal from repeating within 5 minutes to prevent over-trading
+6. **Order execution** — routes to BUY or SELL; BUY orders get price-validated and corrected before the order is placed on Alpaca Paper Trading (no real money)
+
+**End-of-day report (daily at 11:02 PM Riyadh time):**
+
+7. Pulls all filled orders and the portfolio equity curve from Alpaca
+8. Logs every trade to Google Sheets (Trade Log tab)
+9. Calculates daily P&L stats and sends them to Gemini, which writes a short performance report
+10. Saves the summary to Google Sheets (Daily Summary tab) and emails the full report via Gmail
+
+## Workflow
+
+![Full workflow](./Workflow.png)
+
+## How to use
+
+![How to use](./Section_1.png)
+
+## Stack
+
+- **n8n** — orchestration
+- **Alpaca API** — live market data + paper trade execution
+- **Google Gemini** — AI decision engine (structured JSON output) + report writer
+- **Google Sheets** — trade log and daily summary storage
+- **Gmail** — automated daily report delivery
+
+## Key challenges solved
+
+- **Preventing over-trading**: a cooldown filter blocks repeated signals within a 5-minute window, so the AI can't fire the same trade multiple times off noisy data.
+- **Filtering weak signals**: a 5-condition guardrail rejects low-confidence decisions and invalid price/quantity values before they ever reach order execution.
+- **Structured AI output**: uses a structured output parser to force the AI's response into a strict JSON schema (action, confidence, qty, entry, SL, TP) instead of parsing free text.
+- **Price correction on BUY orders**: a dedicated validator step corrects entry prices before order placement to avoid slippage-related rejections.
+
+## Setup
+
+This workflow expects the following, none of which are included in the export:
+
+| Requirement | Used for |
+|---|---|
+| Alpaca paper trading API key + secret | Market data + order execution |
+| Google Gemini API credential | AI decision engine + report writer |
+| Gmail OAuth2 credential | Sending daily report emails |
+| Google Sheets OAuth2 credential | Trade log + daily summary sheets |
+
+Replace the Google Sheets document ID with your own before running. Workflow must be set to **Active** to run on schedule. Currently configured for AAPL only — additional symbols can be added by duplicating the trigger → fetch → format chain into the same AI agent.
+
+## Note
+
+This is a portfolio export of a working trading agent, currently running against Alpaca's **paper trading** environment (simulated, no real funds). It requires active Alpaca, Gemini, Gmail, and Google Sheets credentials to run.
