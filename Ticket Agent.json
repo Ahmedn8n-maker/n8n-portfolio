@@ -1,0 +1,113 @@
+{
+  "name": "Ticket Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "firstName"
+            },
+            {
+              "name": "email"
+            },
+            {
+              "name": "description"
+            }
+          ]
+        }
+      },
+      "id": "f43d8ec8-bca4-4ecc-b94f-f8e3efb2846a",
+      "name": "When called by chatbot",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        560,
+        -16
+      ],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "subject": "=🎫 New Support Ticket — {{ $json.firstName }}",
+        "emailType": "text",
+        "message": "=New support ticket received from the HQ Studios website chatbot.\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n👤 Name:     {{ $json.firstName }}\n📧 Email:    {{ $json.email }}\n📝 Inquiry:  {{ $json.description }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nPlease follow up with this visitor within 1 business day.\n\n— HQ Studios Chatbot System",
+        "options": {}
+      },
+      "id": "2139e14a-549b-41ac-919e-93f2a5b5ee24",
+      "name": "Send Ticket Email",
+      "type": "n8n-nodes-base.gmail",
+      "position": [
+        800,
+        -16
+      ],
+      "typeVersion": 2.1,
+      "webhookId": "a5d634a6-6de4-4a70-8337-fb3f24a197a5",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "fPVTIqyX8evYxIBK",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ticket-response",
+              "name": "response",
+              "value": "=Your request has been received. The HQ Studios team will contact you at {{ $json.email }} within 1 business day.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a82eef5a-f69a-44a9-b7d7-3eebe58df8e6",
+      "name": "Return Confirmation",
+      "type": "n8n-nodes-base.set",
+      "position": [
+        1040,
+        -16
+      ],
+      "typeVersion": 3.4
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When called by chatbot": {
+      "main": [
+        [
+          {
+            "node": "Send Ticket Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Ticket Email": {
+      "main": [
+        [
+          {
+            "node": "Return Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "11e16ec8-563b-4cad-b7cc-7b88a5fb98a0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "93735fe38c4cdf7226f6d280e0cd94a40d48705dfad646c2c56fa59492bd2285"
+  },
+  "id": "rLNqIzdteuiqYimq",
+  "tags": []
+}
