@@ -1,0 +1,2426 @@
+{
+  "name": "Main Orchestrator copy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2928,
+        672
+      ],
+      "id": "dd6dca9f-2443-4939-9c6d-c918c299d796",
+      "name": "Webhook"
+      
+    },
+    {
+      "parameters": {
+        "jsCode": "// Updated Merge Chunks — also collect words array\nconst items = $input.all();\nconst allSegments = [];\nconst allWords = [];\n\nfor (const item of items) {\n  const offset   = item.json.offsetSeconds || 0;\n  const segments = item.json.segments || [];\n  const words    = item.json.words    || [];\n\n  for (const seg of segments) {\n    if (seg.start === null || seg.end === null) continue;\n    allSegments.push({ start: seg.start + offset, end: seg.end + offset, text: seg.text.trim() });\n  }\n\n  for (const w of words) {\n    allWords.push({ start: w.start + offset, end: w.end + offset, word: w.word });\n  }\n}\n\nallSegments.sort((a, b) => a.start - b.start);\nallWords.sort((a, b) => a.start - b.start);\n\n// Deduplicate segments\nconst cleaned = [];\nfor (const seg of allSegments) {\n  if (!cleaned.length) { cleaned.push(seg); continue; }\n  const prev = cleaned[cleaned.length - 1];\n  if (seg.start < prev.end - 0.1) continue;\n  if (seg.start < seg.end) cleaned.push(seg);\n}\n\nreturn [{ json: { segments: cleaned, words: allWords } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        112
+      ],
+      "id": "0c539dc6-421a-4c42-bf1e-ae6ae705cca5",
+      "name": "Merge Chunks"
+    },
+    {
+      "parameters": {
+        "jsCode": "const outputPath = $json.body.outputPath;\n\n\nif (!outputPath) throw new Error('No outputPath received');\n\nreturn {\n  json: {\n    fileId: outputPath.split('/').pop(),\n    outputPath: outputPath\n  }\n};"
+      },
+      "id": "c4c0dd26-82bd-4bd4-a5a5-0f5b7d7100c6",
+      "name": "get file path from webhook",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1552,
+        -240
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get file path from the extract drive file id node\nconst outputPath = $('get file path from webhook').item.json.outputPath;\n\nreturn {\n  json: {\n    downloadedFile: outputPath\n  }\n};"
+      },
+      "id": "e1981919-fe9c-4ee9-8baf-bf636788ef67",
+      "name": "format file path",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1280,
+        -240
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /root/.n8n-files && \\\nffmpeg -i \"{{ $('format file path').first().json.downloadedFile }}\" \\\n  -vn -acodec libmp3lame -ar 16000 -ac 1 -b:a 32k \\\n  -f segment -segment_time 600 \\\n  \"/root/.n8n-files/chunk_%03d.mp3\"\necho \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1040,
+        -240
+      ],
+      "id": "f1fb4f73-6d11-40ec-80da-157d2aa66dbd",
+      "name": "FFmpeg split video into chunks"
+    },
+    {
+      "parameters": {
+        "jsCode": "const downloadedFile = $('format file path').first().json.downloadedFile;\n\n// Get stderr from FFmpeg which contains duration info\nconst stderr = $('FFmpeg split video into chunks').first().json.stderr;\n\n// Extract duration from ffmpeg output\nconst durationMatch = stderr.match(/Duration: (\\d+):(\\d+):(\\d+)/);\nconst totalSeconds = durationMatch \n  ? parseInt(durationMatch[1]) * 3600 + parseInt(durationMatch[2]) * 60 + parseInt(durationMatch[3])\n  : 3600; // default 1 hour if not found\n\nconst chunkDuration = 600; // 10 minutes\nconst numChunks = Math.ceil(totalSeconds / chunkDuration);\n\nconst chunks = [];\nfor (let i = 0; i < numChunks; i++) {\n  chunks.push({\n    json: {\n      filePath: `/root/.n8n-files/chunk_${String(i).padStart(3, '0')}.mp3`,\n      chunkIndex: i,\n      offsetSeconds: i * chunkDuration\n    }\n  });\n}\n\nreturn chunks;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        -240
+      ],
+      "id": "6d580c74-b207-48da-8482-73bdacfde17e",
+      "name": "list chunks with offset"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.filePath }}",
+        "options": {
+          "fileName": "chunk.mp3"
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -352,
+        -240
+      ],
+      "id": "6f48c52b-aea4-4910-91bd-d895e155ab1a",
+      "name": "read chunk as binary"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "language",
+              "value": "={{ $('Webhook').item.json.body.whisper.lang }}"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "timestamp_granularities[]",
+              "value": "segment"
+            },
+            {
+              "name": "timestamp_granularities[]",
+              "value": "word"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1552,
+        112
+      ],
+      "id": "29d2120f-df43-4fdc-ab72-a7d80c058d89",
+      "name": "send chunk to Groq API"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Attach the offset from the input item to the Groq response\nconst items = $input.all();\nreturn items.map((item, index) => ({\n  json: {\n    ...item.json,\n    offsetSeconds: index * 600\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1312,
+        112
+      ],
+      "id": "b920d5da-829f-4fc2-89c4-148b8115db50",
+      "name": "attach offsetSeconds to Groq response"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst allSegments = [];\nconst allWords = [];\n\nfor (const item of items) {\n  const response = item.json;\n  const segments = response.segments || [];\n  const words = response.words || [];\n  const offset = response.offsetSeconds || 0;\n\n  if (segments.length > 0 && segments[0].start !== null) {\n    for (const seg of segments) {\n      allSegments.push({\n        start: seg.start + offset,\n        end: seg.end + offset,\n        text: seg.text.trim()\n      });\n    }\n  } else {\n    const chunkSize = 8;\n    for (let i = 0; i < words.length; i += chunkSize) {\n      const chunk = words.slice(i, i + chunkSize);\n      if (!chunk.length) continue;\n      allSegments.push({\n        start: chunk[0].start + offset,\n        end: chunk[chunk.length - 1].end + offset,\n        text: chunk.map(w => w.word).join(' ')\n      });\n    }\n  }\n\n  for (const w of words) {\n    allWords.push({\n      start: w.start + offset,\n      end: w.end + offset,\n      word: w.word\n    });\n  }\n}\n\nallSegments.sort((a, b) => a.start - b.start);\nallWords.sort((a, b) => a.start - b.start);\n\nreturn [{ json: { segments: allSegments, words: allWords } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        112
+      ],
+      "id": "dd126ffa-fbfd-4e8c-8dde-c3cfd5540ce2",
+      "name": "merge all chunks with correct timestamps"
+    },
+    {
+      "parameters": {
+        "content": "# Extract & Transcribe #",
+        "height": 672,
+        "width": 1588
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1648,
+        -352
+      ],
+      "typeVersion": 1,
+      "id": "39ab38fe-1682-4906-92d1-513e56af1379",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "command": "=cat << 'ENDJSON' > /data/shared/transcript.json\n{{ JSON.stringify($json) }}\nENDJSON\necho \"saved\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        112
+      ],
+      "id": "ba1aaf2c-5674-433c-ba3a-08f2dd77ea62",
+      "name": "Save transcript to file"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=The video is {{ ($json.totalDuration / 60).toFixed(1) }} minutes long.\n\nBEFORE selecting clips:\n1. Read the LAST timestamp in the transcript — confirm total duration\n2. Find moments from the LAST THIRD (after {{ ($json.totalDuration * 0.66 / 60).toFixed(1) }} min)\n3. Find moments from the MIDDLE THIRD ({{ ($json.totalDuration * 0.33 / 60).toFixed(1) }}–{{ ($json.totalDuration * 0.66 / 60).toFixed(1) }} min)\n4. Find moments from the FIRST THIRD (0–{{ ($json.totalDuration * 0.33 / 60).toFixed(1) }} min)\n5. Pick the best {{ $('Webhook').first().json.body.clipCount }} total, at least 1 from each third\n6. Each clip must be {{ $('Webhook').item.json.body.clipDuration.min }}–{{ $('Webhook').item.json.body.clipDuration.max }} seconds\n\nReturn ONLY this JSON, no other text:\n[{\"start\":\"HH:MM:SS.mmm\",\"end\":\"HH:MM:SS.mmm\",\"hook\":\"opening line\",\"score\":0.95}]\n\nTranscript:\n{{ $json.transcript }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a viral content strategist for Arabic and English live events.\nBEFORE selecting any clip, you MUST read the LAST line of the transcript to confirm the total video duration. Then read backwards from the end to find moments in the final third. Then read the middle. Then the beginning. Always return valid JSON only."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -816,
+        480
+      ],
+      "id": "29944957-63a5-442b-822b-76c5766799ef",
+      "name": "AI Agent find viral clips"
+    },
+    {
+      "parameters": {
+        "jsCode": "const MAX_CLIPS = $('Webhook').first().json.body.clipCount || 3;\nconst results = [];\n\nfor (const item of $input.all()) {\n  try {\n    let output = item.json.output;\n    if (typeof output === 'string') {\n      output = JSON.parse(output.replace(/```json|```/g, '').trim());\n    }\n    if (Array.isArray(output)) {\n      results.push(...output);\n    }\n  } catch (e) {\n    console.log('Error:', e);\n  }\n}\n\nfunction fixTimestamp(ts) {\n  if (!ts || typeof ts !== 'string') return null;\n  ts = ts.trim().replace(',', '.');\n  const parts = ts.split(':');\n  let h = 0, m = 0, s = 0;\n  if (parts.length === 2) {\n    m = parseInt(parts[0]) || 0;\n    s = parseFloat(parts[1]) || 0;\n  } else if (parts.length === 3) {\n    h = parseInt(parts[0]) || 0;\n    m = parseInt(parts[1]) || 0;\n    s = parseFloat(parts[2]) || 0;\n  } else return null;\n  if (isNaN(h) || isNaN(m) || isNaN(s)) return null;\n  m += Math.floor(s / 60); s = s % 60;\n  h += Math.floor(m / 60); m = m % 60;\n  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${s.toFixed(3).padStart(6,'0')}`;\n}\n\nresults.sort((a, b) => b.score - a.score);\n\nconst topClips = results\n  .slice(0, MAX_CLIPS)\n  .map((c, i) => ({\n    ...c,\n    index: i,\n    start: fixTimestamp(c.start),\n    end: fixTimestamp(c.end)\n  }))\n  .filter(c => c.start !== null && c.end !== null);\n\nreturn topClips.map(c => ({ json: c }));"
+      },
+      "id": "88343c29-70a7-4aa3-960c-a4a0f91ba627",
+      "name": "keep top N clips",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -384,
+        480
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "content": "# Clip Agent #",
+        "height": 816,
+        "width": 1584
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1648,
+        368
+      ],
+      "typeVersion": 1,
+      "id": "97f5be61-5354-4806-b238-3e33c2693a6c",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const videoPath = $('get file path from webhook').first().json.outputPath\nconst items = $input.all();\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    videoPath: $('get file path from webhook').first().json.outputPath\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1472,
+        864
+      ],
+      "id": "b679bb85-e097-4002-8209-51153704d4e1",
+      "name": "Attach video path to clips"
+    },
+    {
+      "parameters": {
+        "command": "=node << 'EOF'\nconst fs = require('fs');\nconst clips = {{ JSON.stringify($input.all().map(i => i.json)) }};\nfs.writeFileSync('/data/shared/clips.json', JSON.stringify(clips), 'utf8');\nconsole.log('saved ' + clips.length + ' clips');\nEOF"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        864
+      ],
+      "id": "f6e8baea-bd7b-4369-a2b7-c9ec66872652",
+      "name": "Save clips to file"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=ffmpeg -y \\\n  -ss {{ $json.start }} \\\n  -to {{ $json.end }} \\\n  -i \"{{ $json.videoPath }}\" \\\n  -c copy \\\n  \"/data/shared/clip_{{ $json.index }}_raw.mp4\" && echo \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        992,
+        -16
+      ],
+      "id": "f720d518-5616-409e-9794-2c35dc071edc",
+      "name": "Cut clips raw"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=ffmpeg -y \\\n  -i \"/data/shared/clip_{{ $('Parse clips JSON').item.json.index }}_raw.mp4\" \\\n  -vn -acodec libmp3lame -ar 16000 -ac 1 -b:a 32k \\\n  \"/root/.n8n-files/clip_{{ $('Parse clips JSON').item.json.index }}_audio.mp3\" && echo \"done\"\n\n\n"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "3871cd80-55d3-4844-89a7-6d02cbe8467d",
+      "name": "Extract clip audio"
+    },
+    {
+      "parameters": {
+        "content": "# cute vides #",
+        "height": 1024,
+        "width": 3668
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        128,
+        -272
+      ],
+      "typeVersion": 1,
+      "id": "4fa0cfa3-9f2c-4d44-935f-6640782d9193",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1472,
+        512
+      ],
+      "id": "b58ea2b1-31cc-4f1a-8cd5-a836451c5bf3",
+      "name": "Wait"
+      
+    },
+    {
+      "parameters": {
+        "fileSelector": "=/root/.n8n-files/clip_{{ $('Parse clips JSON').item.json.index }}_audio.mp3",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1904,
+        0
+      ],
+      "id": "500faec0-2427-4558-b78e-b88cf1b07f97",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "content": "# Clean filebrowser & Send done message#",
+        "height": 384,
+        "width": 816
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4048,
+        -80
+      ],
+      "typeVersion": 1,
+      "id": "c6834614-d073-4276-b13d-6778f0292bc9",
+      "name": "Sticky Note",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        720
+      ],
+      "id": "f8578c4e-2686-4ab7-8fa8-5b6d402fec88",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "BI1jTrGltmTeZz6o",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "rm -f /data/shared/*.mp4 /data/shared/*.ass /data/shared/*.srt /data/shared/clips.json "
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        176
+      ],
+      "id": "a61665a4-b5b3-429d-960a-0164f29333e7",
+      "name": "Clean server",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "chatId": "789568343",
+        "text": "=A number of {{ $('Webhook').item.json.body.clipCount }} clips is ready to download at http://YOUR_SERVER_IP:5003/files/",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4528,
+        96
+      ],
+      "id": "ae575df8-e75f-45d4-98b3-ca56fec61937",
+      "name": "Send a text message1",
+      
+      "credentials": {
+        "telegramApi": {
+          "id": "6c35ljvgnXFScwmz",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst jsonString = JSON.stringify(data);\n\nreturn [{\n  json: {},\n  binary: {\n    data: await this.helpers.prepareBinaryData(\n      Buffer.from(jsonString, 'utf8'),\n      'transcript.json',\n      'application/json'\n    )\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        112
+      ],
+      "id": "3fee0272-70cd-4d18-a22b-c0283b2a613e",
+      "name": "Prepare transcript binary"
+    },
+    {
+      "parameters": {
+        "jsCode": "const segments = $('Merge Chunks').first().json.segments;\n\nreturn [{\n  json: {\n    segments: segments\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1456,
+        480
+      ],
+      "id": "b1e00bfe-c46b-44e8-b603-eaab2508a9d3",
+      "name": "Extract segments from transcript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const segments = $json.segments;\nconst total = segments.length;\nconst lastSeg = segments[total - 1];\n\n// Create a compact text representation\nconst compactTranscript = segments.map(s => \n  `[${s.start.toFixed(0)}s] ${s.text}`\n).join('\\n');\n\nconst summary = `Total duration: ${lastSeg.end.toFixed(0)} seconds (${(lastSeg.end/60).toFixed(1)} minutes)\nTotal segments: ${total}\nFirst segment: ${segments[0].start.toFixed(0)}s\nMiddle segment: ${segments[Math.floor(total/2)].start.toFixed(0)}s  \nLast segment: ${lastSeg.start.toFixed(0)}s\n\nTRANSCRIPT:\n${compactTranscript}`;\n\nreturn [{ json: { transcript: summary, totalDuration: lastSeg.end } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1152,
+        480
+      ],
+      "id": "ed192526-161b-4b47-a109-bcc739f52461",
+      "name": "Format transcript for AI"
+    },
+    {
+      "parameters": {
+        "command": "=cat /data/shared/clips.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -16
+      ],
+      "id": "3735a892-e38a-4e90-8e89-090c1727cc1e",
+      "name": "Read clips from file"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.stdout;\nconst clips = JSON.parse(raw);\nreturn clips.map((clip, i) => ({ json: { ...clip, index: i } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -16
+      ],
+      "id": "364e0b8e-4c40-4e31-839b-9f3225b6f22a",
+      "name": "Parse clips JSON"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a6662214-c23f-4f9e-a78b-bb6a4959eb84",
+              "leftValue": "={{ $('Webhook').item.json.body.subtitleStyle.enabled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1280,
+        -16
+      ],
+      "id": "6cd98306-b374-4a2f-b8b3-44a57e64e6c7",
+      "name": "Subtitles enabled?"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            },
+            {
+              "name": "Transfer-Encoding",
+              "value": "chunked"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2192,
+        0
+      ],
+      "id": "17ef16ed-1e00-4041-8f3f-6ca61f5d683e",
+      "name": "Upload audio to AssemblyAI"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/transcript",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"audio_url\": \"{{ $json.upload_url }}\",\n  \"language_code\": \"ar\",\n  \"speech_models\": [\"universal-2\"]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2464,
+        0
+      ],
+      "id": "5281b3f8-6059-480d-b466-f11ab9f6da88",
+      "name": "Request transcription"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        320,
+        336
+      ],
+      "id": "28260940-bc07-43ee-9a07-e3b5a8534108",
+      "name": "Check transcription status"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $json.id }}/srt",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1728,
+        320
+      ],
+      "id": "e8e5c609-b8de-42ac-ad94-f924f5eec7e1",
+      "name": "Download SRT file"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    ...item.json,\n    status: item.json.status,\n    id: item.json.id,\n    index: item.json.index\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        336
+      ],
+      "id": "ebba32d1-70b8-40d2-a285-89bfc168e82d",
+      "name": "Keep transcription status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8259af23-be0e-4243-90a1-96c99a739c6d",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1056,
+        336
+      ],
+      "id": "d2695091-f271-48e8-bea6-1ebe48e2a55b",
+      "name": "Transcription complete?"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item, i) => ({\n  json: {\n    data: item.json.data,\n    index: i\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        320
+      ],
+      "id": "60366266-bc27-41e2-98a3-27f23e5c1307",
+      "name": "Assign clip index"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=cat << 'EOF' > /data/shared/clip_{{ $json.index }}.srt\n{{ $json.data }}\nEOF\nffmpeg -y -i /data/shared/clip_{{ $json.index }}.srt /data/shared/clip_{{ $json.index }}.ass && echo \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        320
+      ],
+      "id": "c431642a-148f-40f6-aa68-3919c01a4e0f",
+      "name": "Save SRT and convert to ASS"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=echo \"=== Input check ===\" && \\\nls -lh /data/shared/clip_{{ $('Assign clip index').item.json.index }}_raw.mp4 && \\\nls -lh /data/shared/clip_{{ $('Assign clip index').item.json.index }}.ass && \\\nffmpeg -y \\\n  -i /data/shared/clip_{{ $('Assign clip index').item.json.index }}_raw.mp4 \\\n  -vf \"ass=/data/shared/clip_{{ $('Assign clip index').item.json.index }}.ass:shaping=complex\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k \\\n  /data/shared/clip_{{ $('Assign clip index').item.json.index }}_final.mp4 && \\\necho \"=== Done clip_{{ $('Assign clip index').item.json.index }} ===\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        320
+      ],
+      "id": "255006d9-ad71-47b6-b80f-15c58d8065e3",
+      "name": "Burn subtitles into clip"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6d4ce232-806e-4d80-a9b9-5cd716e50864",
+              "leftValue": "={{ $('Webhook').item.json.body.outroPath }}",
+              "rightValue": "exists",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3024,
+        320
+      ],
+      "id": "ed444f95-949d-41cf-aff1-c1e8bc030d6e",
+      "name": "Outro exists?"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=SHARED=\"/data/shared\"\nENDING=\"$SHARED/0.mp4\"\nENDING_NORM=\"$SHARED/0_normalized.mp4\"\n\n# Normalize 0.mp4 to match clip_final (720p, 29.97fps)\nffmpeg -y -i \"$ENDING\" \\\n  -vf \"scale=1280:720,fps=2997/100\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k -ar 44100 \\\n  -video_track_timescale 11988 \\\n  \"$ENDING_NORM\"\n\n# Now concat\nfor INPUT in $SHARED/clip_*_final.mp4; do\n  INDEX=$(echo \"$INPUT\" | grep -o '[0-9]*')\n  OUTPUT=\"$SHARED/clip_${INDEX}_merged.mp4\"\n  LIST=\"$SHARED/list_${INDEX}.txt\"\n\n  echo \"file '$INPUT'\" > \"$LIST\"\n  echo \"file '$ENDING_NORM'\" >> \"$LIST\"\n\n  ffmpeg -y -f concat -safe 0 -i \"$LIST\" -c copy \"$OUTPUT\"\n\n  mv \"$OUTPUT\" \"$INPUT\"\n  rm \"$LIST\"\n  echo \"=== Done clip_${INDEX} ===\"\ndone\n\nrm \"$ENDING_NORM\"\necho \"ALL DONE\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3184,
+        448
+      ],
+      "id": "6d207140-58b8-42c0-a2d7-947c7e85eb92",
+      "name": "Append outro to clips"
+    },
+    {
+      "parameters": {
+        "command": "\n\n\nmv /data/shared/clip_*_final.mp4 /data/shared/output/"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3456,
+        448
+      ],
+      "id": "5cd812f2-0b20-41e3-8f55-5969416858e9",
+      "name": "Move final clips to output"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=SHARED=\"/data/shared\"\nENDING=\"$SHARED/0.mp4\"\nENDING_NORM=\"$SHARED/0_normalized.mp4\"\n\n# Normalize 0.mp4 to match clip_final (720p, 29.97fps)\nffmpeg -y -i \"$ENDING\" \\\n  -vf \"scale=1280:720,fps=2997/100\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k -ar 44100 \\\n  -video_track_timescale 11988 \\\n  \"$ENDING_NORM\"\n\n# Now concat\nfor INPUT in $SHARED/clip_*_raw.mp4; do\n  INDEX=$(echo \"$INPUT\" | grep -o '[0-9]*')\n  OUTPUT=\"$SHARED/clip_${INDEX}_merged.mp4\"\n  LIST=\"$SHARED/list_${INDEX}.txt\"\n\n  echo \"file '$INPUT'\" > \"$LIST\"\n  echo \"file '$ENDING_NORM'\" >> \"$LIST\"\n\n  ffmpeg -y -f concat -safe 0 -i \"$LIST\" -c copy \"$OUTPUT\"\n\n  mv \"$OUTPUT\" \"$INPUT\"\n  rm \"$LIST\"\n  echo \"=== Done clip_${INDEX} ===\"\ndone\n\nrm \"$ENDING_NORM\"\necho \"ALL DONE\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3008,
+        -192
+      ],
+      "id": "a45f583e-013a-4944-9396-771d1e98699a",
+      "name": "Append outro to raw clips"
+    },
+    {
+      "parameters": {
+        "command": "mv /data/shared/clip_*_raw.mp4 /data/shared/output/"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        -192
+      ],
+      "id": "22ebafad-9c26-4c35-8c39-e718bd2de46f",
+      "name": "Move raw clips to output"
+    },
+    {
+      "parameters": {
+        "command": "\n\n\nmv /data/shared/clip_*_final.mp4 /data/shared/output/"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2768,
+        352
+      ],
+      "id": "fdab5f79-3f9f-4399-b9ed-b1a81c6491aa",
+      "name": "Move final clips to output1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const videoPath = $('get file path from webhook2').first().json.outputPath\nconst items = $input.all();\n\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    videoPath: $('get file path from webhook2').first().json.outputPath\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        2000
+      ],
+      "id": "ef16bd8b-3419-412a-824d-5c1237ccc73d",
+      "name": "Attach video path to clips1"
+    },
+    {
+      "parameters": {
+        "command": "=node << 'EOF'\nconst fs = require('fs');\nconst clips = {{ JSON.stringify($input.all().map(i => i.json)) }};\nfs.writeFileSync('/data/shared/clips.json', JSON.stringify(clips), 'utf8');\nconsole.log('saved ' + clips.length + ' clips');\nEOF"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        128,
+        1968
+      ],
+      "id": "e6556c5f-9a0a-4a37-b195-5f6adcf5ef95",
+      "name": "Save clips to file1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const outputPath = $json.body.outputPath;\n\n\nif (!outputPath) throw new Error('No outputPath received');\n\nreturn {\n  json: {\n    fileId: outputPath.split('/').pop(),\n    outputPath: outputPath\n  }\n};"
+      },
+      "id": "62a0a733-bf61-4110-8521-203b5490352a",
+      "name": "get file path from webhook2",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1616,
+        1472
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get file path from the extract drive file id node\nconst outputPath = $('get file path from webhook2').item.json.outputPath;\n\nreturn {\n  json: {\n    downloadedFile: outputPath\n  }\n};"
+      },
+      "id": "1b8c5bfb-be51-4b03-80ce-fa3186d67255",
+      "name": "format file path2",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        -1392,
+        1472
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.audioPath }}",
+        "options": {
+          "fileName": "=full_audio.mp3"
+        }
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -752,
+        1456
+      ],
+      "id": "837ff53c-9480-41d3-b601-81fca70eceb4",
+      "name": "read chunk as binary2"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Target person: الدكتور أحمد المغامس\nTranscript:\n{{ $json.speakerTranscript }}\n\nReturn exactly this format with no extra text, no backticks, no markdown:\n{\"speakerLabel\": \"A\", \"confidence\": 0.95, \"reason\": \"explanation\"}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are analyzing a transcript with labeled speakers.\nGiven a target person's name, identify which speaker label belongs to them based on context clues like someone addressing them by name, introductions, or Q&A patterns.\nReturn ONLY valid JSON, no other text. No markdown. No backticks. No code blocks.\nYour response must start with { and end with }"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1360,
+        2000
+      ],
+      "id": "401b0c13-2605-42fc-8dd8-3fcc60806b1a",
+      "name": "AI Agent find viral clips2"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=ffmpeg -y \\\n  -ss {{ $('Code in JavaScript').item.json.start }} \\\n  -to {{ $('Code in JavaScript').item.json.end }} \\\n  -i \"{{ $json.videoPath }}\" \\\n  -c copy \\\n  \"/data/shared/clip_{{ $json.index }}_raw.mp4\" && echo \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        800,
+        1968
+      ],
+      "id": "632d0760-3276-4083-938f-fbc0bb32b0b4",
+      "name": "Cut clips raw1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        -1392,
+        2208
+      ],
+      "id": "6f8782a3-af0d-4ac3-a5b3-beb2285a3f9b",
+      "name": "Google Gemini Chat Model2",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "BI1jTrGltmTeZz6o",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "rm -f /data/shared/*.mp4 /data/shared/*.ass /data/shared/*.srt /data/shared/clips.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3440,
+        2224
+      ],
+      "id": "33b1788e-e63c-4d2c-86d6-126ddcd4b7d0",
+      "name": "Clean server2"
+    },
+    {
+      "parameters": {
+        "chatId": "789568343",
+        "text": "=A number of {{ $('Webhook').item.json.body.clipCount }} clips is ready to download at http://YOUR_SERVER_IP:5003/files/",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3232,
+        2048
+      ],
+      "id": "bf7b86d2-0df7-4d54-83d1-79050353d5ef",
+      "name": "Send a text message",
+      
+      "credentials": {
+        "telegramApi": {
+          "id": "6c35ljvgnXFScwmz",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=cat /data/shared/clips.json"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        352,
+        1968
+      ],
+      "id": "1a8e9c4a-169e-4393-b517-c65de1c9aceb",
+      "name": "Read clips from file1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.stdout;\nconst clips = JSON.parse(raw);\nreturn clips.map((clip, i) => ({ json: { ...clip, index: i } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        1968
+      ],
+      "id": "47eeb61f-6f1a-46cf-96c8-df67bff234a1",
+      "name": "Parse clips JSON1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a6662214-c23f-4f9e-a78b-bb6a4959eb84",
+              "leftValue": "={{ $('Webhook').item.json.body.subtitleStyle.enabled }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        2112
+      ],
+      "id": "9a711a32-5a12-4fa8-b379-6ef7b539c91e",
+      "name": "Subtitles enabled?1"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $('Check transcription status2').item.json.id }}/srt",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "e680790986a5482994f1cf594b8f15ee"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1440,
+        2192
+      ],
+      "id": "d0dd42e9-8327-459d-be3c-c854a6a12244",
+      "name": "Download SRT file1"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item, i) => ({\n  json: {\n    data: item.json.data,\n    index: i\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        2192
+      ],
+      "id": "ef20d8eb-de44-4434-b73e-fe41c7e4dad4",
+      "name": "Assign clip index1"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=cat << 'EOF' > /data/shared/clip_{{ $json.index }}.srt\n{{ $json.data }}\nEOF\nffmpeg -y -i /data/shared/clip_{{ $json.index }}.srt /data/shared/clip_{{ $json.index }}.ass && echo \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1888,
+        2192
+      ],
+      "id": "7f011fbc-a454-4fab-884d-251b5a73aec1",
+      "name": "Save SRT and convert to ASS1"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=echo \"=== Input check ===\" && \\\nls -lh /data/shared/clip_{{ $('Assign clip index1').item.json.index }}_raw.mp4 && \\\nls -lh /data/shared/clip_{{ $('Assign clip index1').item.json.index }}.ass && \\\nffmpeg -y \\\n  -i /data/shared/clip_{{ $('Assign clip index1').item.json.index }}_raw.mp4 \\\n  -vf \"ass=/data/shared/clip_{{ $('Assign clip index1').item.json.index }}.ass:shaping=complex\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k \\\n  /data/shared/clip_{{ $('Assign clip index1').item.json.index }}_final.mp4 && \\\necho \"=== Done clip_{{ $('Assign clip index1').item.json.index }} ===\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2112,
+        2192
+      ],
+      "id": "a1b85d7f-d89d-4903-830b-596ac02335a3",
+      "name": "Burn subtitles into clip1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6d4ce232-806e-4d80-a9b9-5cd716e50864",
+              "leftValue": "={{ $('Webhook').item.json.body.outroPath }}",
+              "rightValue": "exists",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2336,
+        2192
+      ],
+      "id": "01e82523-fd51-4d28-9199-ea88c10a25d0",
+      "name": "Outro exists?1"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=SHARED=\"/data/shared\"\nENDING=\"$SHARED/0.mp4\"\nENDING_NORM=\"$SHARED/0_normalized.mp4\"\n\n# Normalize 0.mp4 to match clip_final (720p, 29.97fps)\nffmpeg -y -i \"$ENDING\" \\\n  -vf \"scale=1280:720,fps=2997/100\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k -ar 44100 \\\n  -video_track_timescale 11988 \\\n  \"$ENDING_NORM\"\n\n# Now concat\nfor INPUT in $SHARED/clip_*_final.mp4; do\n  INDEX=$(echo \"$INPUT\" | grep -o '[0-9]*')\n  OUTPUT=\"$SHARED/clip_${INDEX}_merged.mp4\"\n  LIST=\"$SHARED/list_${INDEX}.txt\"\n\n  echo \"file '$INPUT'\" > \"$LIST\"\n  echo \"file '$ENDING_NORM'\" >> \"$LIST\"\n\n  ffmpeg -y -f concat -safe 0 -i \"$LIST\" -c copy \"$OUTPUT\"\n\n  mv \"$OUTPUT\" \"$INPUT\"\n  rm \"$LIST\"\n  echo \"=== Done clip_${INDEX} ===\"\ndone\n\nrm \"$ENDING_NORM\"\necho \"ALL DONE\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        2256
+      ],
+      "id": "f2398e33-ee51-4de7-ae8e-c770859cc9f6",
+      "name": "Append outro to clips1"
+    },
+    {
+      "parameters": {
+        "command": "\nrm -f /data/shared/output/*.mp4\n\nmv /data/shared/clip_*_final.mp4 /data/shared/output/"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2784,
+        2256
+      ],
+      "id": "6c9b54c0-e03b-4fb4-b474-e2d0da84ec2e",
+      "name": "Move final clips to output2"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=SHARED=\"/data/shared\"\nENDING=\"$SHARED/0.mp4\"\nENDING_NORM=\"$SHARED/0_normalized.mp4\"\n\n# Normalize 0.mp4 to match clip_final (720p, 29.97fps)\nffmpeg -y -i \"$ENDING\" \\\n  -vf \"scale=1280:720,fps=2997/100\" \\\n  -c:v libx264 -preset fast -crf 22 \\\n  -c:a aac -b:a 128k -ar 44100 \\\n  -video_track_timescale 11988 \\\n  \"$ENDING_NORM\"\n\n# Now concat\nfor INPUT in $SHARED/clip_*_raw.mp4; do\n  INDEX=$(echo \"$INPUT\" | grep -o '[0-9]*')\n  OUTPUT=\"$SHARED/clip_${INDEX}_merged.mp4\"\n  LIST=\"$SHARED/list_${INDEX}.txt\"\n\n  echo \"file '$INPUT'\" > \"$LIST\"\n  echo \"file '$ENDING_NORM'\" >> \"$LIST\"\n\n  ffmpeg -y -f concat -safe 0 -i \"$LIST\" -c copy \"$OUTPUT\"\n\n  mv \"$OUTPUT\" \"$INPUT\"\n  rm \"$LIST\"\n  echo \"=== Done clip_${INDEX} ===\"\ndone\n\nrm \"$ENDING_NORM\"\necho \"ALL DONE\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2560,
+        1968
+      ],
+      "id": "be5e0a1e-cf99-4d13-b052-cc6843ca1019",
+      "name": "Append outro to raw clips1"
+    },
+    {
+      "parameters": {
+        "command": "mv /data/shared/clip_*_raw.mp4 /data/shared/output/"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        2784,
+        1968
+      ],
+      "id": "3a0469c1-2d5c-4b63-8bf8-fcb484ed9324",
+      "name": "Move raw clips to output1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/upload",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            },
+            {
+              "name": "Transfer-Encoding",
+              "value": "chunked"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -512,
+        1472
+      ],
+      "id": "a7954f85-ac37-4f53-8a6f-6ddf5b06fbe7",
+      "name": "Upload audio to AssemblyAI2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.assemblyai.com/v2/transcript",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"audio_url\": \"{{ $json.upload_url }}\",\n  \"language_code\": \"ar\",\n  \"speech_models\": [\"universal-2\"],\n  \"speaker_labels\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -288,
+        1472
+      ],
+      "id": "0fd7248b-5dd6-4fdf-ad24-cfde431718ac",
+      "name": "Request transcription2"
+    },
+    {
+      "parameters": {
+        "amount": 60
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        1680
+      ],
+      "id": "b16bfe74-acc9-4ccb-86ab-8f6a5c2312dd",
+      "name": "Wait2"
+      
+    },
+    {
+      "parameters": {
+        "url": "=https://api.assemblyai.com/v2/transcript/{{ $json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -64,
+        1472
+      ],
+      "id": "89a51562-7d7a-43cd-b88d-7b9436d402d9",
+      "name": "Check transcription status2"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({\n  json: {\n    status: item.json.status,\n    id: item.json.id,\n    index: item.json.index,\n    utterances: item.json.utterances || []\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        1472
+      ],
+      "id": "289e9708-9f26-47ea-bad0-2af6396f13dc",
+      "name": "Keep transcription status2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8259af23-be0e-4243-90a1-96c99a739c6d",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        368,
+        1472
+      ],
+      "id": "58603079-b61b-4e4b-930f-1dbf1db5af49",
+      "name": "Transcription complete?2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const utterances = $('Extract speaker segments1').first().json.utterances;\nconst speakerLabel = $input.first().json.output.speakerLabel;\nconst targetName = $('Extract speaker segments1').first().json.targetName;\n\nconst targetUtterances = utterances.filter(u => u.speaker === speakerLabel);\n\nconst clips = [];\nlet currentClip = null;\nconst GAP_THRESHOLD = 3000;\nconst MIN_DURATION = 20000;\nconst MAX_DURATION = 150000;\n\nfor (const u of targetUtterances) {\n  if (!currentClip) {\n    currentClip = { start: u.start, end: u.end, text: u.text };\n    continue;\n  }\n  const gap = u.start - currentClip.end;\n  const duration = u.end - currentClip.start;\n  if (gap > GAP_THRESHOLD || duration > MAX_DURATION) {\n    if (currentClip.end - currentClip.start >= MIN_DURATION) clips.push(currentClip);\n    currentClip = { start: u.start, end: u.end, text: u.text };\n  } else {\n    currentClip.end = u.end;\n    currentClip.text += ' ' + u.text;\n  }\n}\n\nif (currentClip && currentClip.end - currentClip.start >= MIN_DURATION) clips.push(currentClip);\n\nconst clipCount = $('Webhook').first().json.body.clipCount || 3;\n\nfunction msToTimestamp(ms) {\n  const h = Math.floor(ms / 3600000);\n  const m = Math.floor((ms % 3600000) / 60000);\n  const s = ((ms % 60000) / 1000).toFixed(3);\n  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(6,'0')}`;\n}\n\nreturn clips\n  .sort((a, b) => (b.end - b.start) - (a.end - a.start))\n  .slice(0, clipCount)\n  .map((c, i) => ({\n    json: {\n      index: i,\n      start: msToTimestamp(c.start),\n      end: msToTimestamp(c.end),\n      hook: c.text.substring(0, 100),\n      score: 0.95\n    }\n  }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -912,
+        2032
+      ],
+      "id": "f6822f57-8dae-4598-8b47-6cba4b2e7658",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "command": "=cat << 'EOF' > /data/shared/transcript.json\n{{ JSON.stringify($json) }}\nEOF\necho \"saved\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -576,
+        2000
+      ],
+      "id": "124d657f-4820-4710-9ff0-11bed1f8e2c1",
+      "name": "Execute Command"
+    },
+    {
+      "parameters": {
+        "jsCode": "const stderr = $input.first().json.stderr\nconst stdout = $input.first().json.stdout\n\n// Check ffmpeg actually completed\nif (!stdout.includes('done')) {\n  throw new Error('FFmpeg failed: ' + stderr);\n}\n\nreturn [{\n  json: {\n    audioPath: '/root/.n8n-files/full_audio.mp3'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -928,
+        1456
+      ],
+      "id": "db5ec643-7037-432c-a446-d41e6edf2d1a",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /root/.n8n-files && \\\nffmpeg -y -i \"{{ $('format file path2').first().json.downloadedFile }}\" \\\n  -vn -acodec libmp3lame -ar 16000 -ac 1 -b:a 32k \\\n  -threads 0 \\\n  /root/.n8n-files/full_audio.mp3 && \\\necho \"done\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1168,
+        1344
+      ],
+      "id": "29e7a013-7b93-4b1a-a42d-d44f1f7afb3a",
+      "name": "extract audio1"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "={\n  \"type\": \"object\",\n  \"properties\": {\n    \"speakerLabel\": {\n      \"type\": \"string\",\n      \"description\": \"The speaker label letter e.g. A, B, C\"\n    },\n    \"confidence\": {\n      \"type\": \"number\",\n      \"description\": \"Confidence score between 0 and 1\"\n    },\n    \"reason\": {\n      \"type\": \"string\",\n      \"description\": \"Explanation of why this speaker label was chosen\"\n    }\n  },\n  \"required\": [\"speakerLabel\", \"confidence\", \"reason\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1200,
+        2208
+      ],
+      "id": "acffa3e4-5535-40cd-93cd-187ef169d8f1",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "8305350b-61a8-4cc1-8607-7d4703b95399",
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "clips",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "clips"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.mode }}",
+                    "rightValue": "speaker",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "be200ebf-d725-49f1-b7a2-2ee81c4b58ba"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "speaker"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -2528,
+        672
+      ],
+      "id": "dfc94878-e894-4768-871c-2c20b7c7ff1b",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const utterances = $json.utterances || [];\nconst targetName = $('Webhook').first().json.body.targetSpeaker || '';\n\nconst speakerTranscript = utterances.map(u =>\n  `[Speaker ${u.speaker}] [${(u.start/1000).toFixed(1)}s - ${(u.end/1000).toFixed(1)}s]: ${u.text}`\n).join('\\n');\n\nreturn [{\n  json: {\n    speakerTranscript,\n    targetName,\n    utterances\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        1760
+      ],
+      "id": "9d5d9876-23eb-4065-a139-9d3863c747a7",
+      "name": "Extract speaker segments1"
+    },
+    {
+      "parameters": {
+        "content": "# Speaker Clips #",
+        "height": 1248,
+        "width": 5476
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -1648,
+        1264
+      ],
+      "typeVersion": 1,
+      "id": "f6678f14-2eda-4de7-95e0-6a869f4bff29",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "# 📄 **AI-Powered Video Clipping Agent**\n\n## ✅ **What it does:**\n\nFully automated pipeline that takes a raw video recording and outputs ready-to-publish short clips — with optional subtitles and outro branding — zero manual editing needed. Runs in two modes: viral clip finder or speaker isolation.\n\n## ⚙️ How it works:\n\n🎬 **Trigger** — receives a video path via webhook (from OBS or a web UI), with clip count, duration range, subtitles, outro, language, and target speaker all configurable per run.\n\n\n#### **Mode 1 — AI Viral Clip Finder**\n\n🎙️ **Chunked Transcription** — FFmpeg splits audio into 10-min chunks, transcribes each in parallel via Groq's Whisper API (Arabic/English), stitches timestamps into one accurate transcript.\n\n🤖 **Gemini AI Agent** — analyzes the full transcript and picks the top N viral moments, spread across beginning/middle/end.\n\n✂️ **Clip Assembly** — FFmpeg cuts the selected clips, optionally burns in subtitles (AssemblyAI → SRT → ASS), appends a branded outro.\n\n\n#### **Mode 2 — Speaker Isolation Clips**\n\n🗣️ **Diarization** — extracts full audio, sends to AssemblyAI with speaker diarization enabled.\n\n🤖 **Gemini AI Agent** — identifies which speaker label matches the target person by name using transcript context.\n\n✂️ **Clip Assembly** — groups that speaker's utterances into coherent 20s–150s clips, avoiding long silences, then same subtitle/outro pipeline applies.\n\n📤 **Delivery** — final clips moved to a file server, Telegram notification sent with a download link.\n\n📋 **Source of truth:** shared file volume (`/data/shared/`) — clips, transcripts, and SRT files pass between nodes here rather than in-memory, so large files don't break the pipeline.\n\n\n\n## 🛠️ **What you need to set up**\n\n🔑 **Groq API key** — for Whisper transcription in clip-finder mode.\n\n🔑 **AssemblyAI API key** — for diarization (speaker mode) and subtitle generation (both modes).\n\n🔑 **Gemini API credentials** — for the viral-moment selection and speaker-identification agents.\n\n📁 **Shared file volume** — set up `/data/shared/` (or equivalent) accessible to all nodes/containers for intermediate files.\n\n🎞️ **FFmpeg installed** — on the machine/container running the workflow, with `ass` filter support for subtitle burning (and Arabic text shaping if needed).\n\n📲 **Telegram bot + chat ID** — for the completion notification with download link.\n\n🔗 **Webhook URL** — expose the trigger endpoint and point your OBS/web UI to it, along with the video file path.\n\n🖥️ **File server** — somewhere to move/host the final clips for download.",
+        "height": 992,
+        "width": 896
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -3200,
+        1136
+      ],
+      "typeVersion": 1,
+      "id": "41167d5f-9baa-4d5d-ad62-7db2329dc98b",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "178.104.161.181:5678",
+            "connection": "keep-alive",
+            "content-length": "338",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "origin": "http://178.104.161.181:8080",
+            "referer": "http://178.104.161.181:8080/",
+            "accept-encoding": "gzip, deflate",
+            "accept-language": "en-US,en;q=0.9"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "outputPath": "/data/shared/capture_13_part_2.mp4",
+            "eventName": "skv",
+            "clipCount": 5,
+            "clipDuration": {
+              "min": 30,
+              "max": 60
+            },
+            "speakerName": null,
+            "mode": "clips",
+            "introPath": null,
+            "outroPath": null,
+            "subtitleStyle": {
+              "enabled": false
+            },
+            "encoding": {
+              "crf": 18,
+              "preset": "slow",
+              "audioBitrate": "192k",
+              "format": "9:16"
+            },
+            "whisper": {
+              "lang": "ar",
+              "timeout": 3600000
+            }
+          },
+          "webhookUrl": "https://n8n77.moon8nsloution.cfd/webhook/obs-upload",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Chunks": {
+      "main": [
+        [
+          {
+            "node": "Prepare transcript binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get file path from webhook": {
+      "main": [
+        [
+          {
+            "node": "format file path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format file path": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg split video into chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg split video into chunks": {
+      "main": [
+        [
+          {
+            "node": "list chunks with offset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "list chunks with offset": {
+      "main": [
+        [
+          {
+            "node": "read chunk as binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read chunk as binary": {
+      "main": [
+        [
+          {
+            "node": "send chunk to Groq API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send chunk to Groq API": {
+      "main": [
+        [
+          {
+            "node": "attach offsetSeconds to Groq response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "attach offsetSeconds to Groq response": {
+      "main": [
+        [
+          {
+            "node": "merge all chunks with correct timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "merge all chunks with correct timestamps": {
+      "main": [
+        [
+          {
+            "node": "Merge Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent find viral clips": {
+      "main": [
+        [
+          {
+            "node": "keep top N clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "keep top N clips": {
+      "main": [
+        [
+          {
+            "node": "Attach video path to clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach video path to clips": {
+      "main": [
+        [
+          {
+            "node": "Save clips to file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save clips to file": {
+      "main": [
+        [
+          {
+            "node": "Read clips from file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cut clips raw": {
+      "main": [
+        [
+          {
+            "node": "Subtitles enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract clip audio": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Check transcription status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Upload audio to AssemblyAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save transcript to file": {
+      "main": [
+        [
+          {
+            "node": "Extract segments from transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent find viral clips",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean server": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare transcript binary": {
+      "main": [
+        [
+          {
+            "node": "Save transcript to file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract segments from transcript": {
+      "main": [
+        [
+          {
+            "node": "Format transcript for AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format transcript for AI": {
+      "main": [
+        [
+          {
+            "node": "AI Agent find viral clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read clips from file": {
+      "main": [
+        [
+          {
+            "node": "Parse clips JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse clips JSON": {
+      "main": [
+        [
+          {
+            "node": "Cut clips raw",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subtitles enabled?": {
+      "main": [
+        [
+          {
+            "node": "Append outro to raw clips",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract clip audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload audio to AssemblyAI": {
+      "main": [
+        [
+          {
+            "node": "Request transcription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request transcription": {
+      "main": [
+        [
+          {
+            "node": "Check transcription status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check transcription status": {
+      "main": [
+        [
+          {
+            "node": "Keep transcription status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download SRT file": {
+      "main": [
+        [
+          {
+            "node": "Assign clip index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep transcription status": {
+      "main": [
+        [
+          {
+            "node": "Transcription complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcription complete?": {
+      "main": [
+        [
+          {
+            "node": "Download SRT file",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign clip index": {
+      "main": [
+        [
+          {
+            "node": "Save SRT and convert to ASS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save SRT and convert to ASS": {
+      "main": [
+        [
+          {
+            "node": "Burn subtitles into clip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Burn subtitles into clip": {
+      "main": [
+        [
+          {
+            "node": "Move final clips to output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outro exists?": {
+      "main": [
+        [
+          {
+            "node": "Clean server",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append outro to clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append outro to clips": {
+      "main": [
+        [
+          {
+            "node": "Move final clips to output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move final clips to output": {
+      "main": [
+        [
+          {
+            "node": "Clean server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append outro to raw clips": {
+      "main": [
+        [
+          {
+            "node": "Move raw clips to output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move raw clips to output": {
+      "main": [
+        [
+          {
+            "node": "Clean server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move final clips to output1": {
+      "main": [
+        [
+          {
+            "node": "Outro exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach video path to clips1": {
+      "main": [
+        [
+          {
+            "node": "Save clips to file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save clips to file1": {
+      "main": [
+        [
+          {
+            "node": "Read clips from file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get file path from webhook2": {
+      "main": [
+        [
+          {
+            "node": "format file path2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "format file path2": {
+      "main": [
+        [
+          {
+            "node": "extract audio1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read chunk as binary2": {
+      "main": [
+        [
+          {
+            "node": "Upload audio to AssemblyAI2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent find viral clips2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cut clips raw1": {
+      "main": [
+        [
+          {
+            "node": "Subtitles enabled?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent find viral clips2",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean server2": {
+      "main": [
+        []
+      ]
+    },
+    "Read clips from file1": {
+      "main": [
+        [
+          {
+            "node": "Parse clips JSON1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse clips JSON1": {
+      "main": [
+        [
+          {
+            "node": "Cut clips raw1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subtitles enabled?1": {
+      "main": [
+        [
+          {
+            "node": "Append outro to raw clips1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download SRT file1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download SRT file1": {
+      "main": [
+        [
+          {
+            "node": "Assign clip index1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assign clip index1": {
+      "main": [
+        [
+          {
+            "node": "Save SRT and convert to ASS1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save SRT and convert to ASS1": {
+      "main": [
+        [
+          {
+            "node": "Burn subtitles into clip1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Burn subtitles into clip1": {
+      "main": [
+        [
+          {
+            "node": "Outro exists?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outro exists?1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Append outro to clips1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append outro to clips1": {
+      "main": [
+        [
+          {
+            "node": "Move final clips to output2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move final clips to output2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append outro to raw clips1": {
+      "main": [
+        [
+          {
+            "node": "Move raw clips to output1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move raw clips to output1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload audio to AssemblyAI2": {
+      "main": [
+        [
+          {
+            "node": "Request transcription2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request transcription2": {
+      "main": [
+        [
+          {
+            "node": "Check transcription status2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "Check transcription status2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check transcription status2": {
+      "main": [
+        [
+          {
+            "node": "Keep transcription status2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep transcription status2": {
+      "main": [
+        [
+          {
+            "node": "Transcription complete?2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcription complete?2": {
+      "main": [
+        [
+          {
+            "node": "Extract speaker segments1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Attach video path to clips1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "read chunk as binary2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract audio1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent find viral clips2",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "get file path from webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "get file path from webhook2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract speaker segments1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent find viral clips2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ebf8e8a4-9c3f-408d-a863-f22f1e12c9ec",
+
+  "id": "CcdzQM3NSiT5ugM2",
+  "tags": []
+}
