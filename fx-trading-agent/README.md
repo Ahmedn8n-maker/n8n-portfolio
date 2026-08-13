@@ -4,6 +4,16 @@ A fully automated scalp trading bot that runs 24/7, trading US stocks using real
 
 ## What it does
 
+## Results
+
+Daily performance dashboard:
+
+![Dashboard](./dashboard.png)
+
+End-of-day report notification:
+
+![Daily report](./daily-report.png)
+
 **Live trading loop (runs continuously during market hours):**
 
 1. **Market hours check** — a schedule trigger checks if US market hours are active (9:30 AM–4:00 PM ET); outside hours, nothing runs
