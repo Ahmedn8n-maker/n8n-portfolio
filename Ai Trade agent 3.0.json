@@ -1,0 +1,1331 @@
+{
+  "name": "Ai Trade agent 3.0",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "conf-check",
+              "leftValue": "={{ $json.output.confidence }}",
+              "rightValue": 0.55,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "700972e4-43c3-4997-a2d1-b87ea9973178",
+              "leftValue": "={{ $json.output.action }}",
+              "rightValue": "hold",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "c417e830-6763-46bc-a23b-c6d53e4bc83c",
+              "leftValue": "={{ $json.output.qty }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "4928d41d-e1f7-4daf-9e38-a8f2bd3ca824",
+              "leftValue": "={{ $json.output.qty }}",
+              "rightValue": 15,
+              "operator": {
+                "type": "number",
+                "operation": "lte"
+              }
+            },
+            {
+              "id": "72a46c58-818c-4efc-b590-8a0825c468e1",
+              "leftValue": "={{ $json.output.stop_loss }}",
+              "rightValue": 999,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c6f11bff-3966-440c-b983-e4940ef88c46",
+      "name": "Guardrail Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.action }}",
+                    "rightValue": "buy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "2d1913c0-253c-4c04-8bd9-23bb909e476b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BUY"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.output.action }}",
+                    "rightValue": "sell",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "47c6931b-4b2c-4dad-87d7-88e5408bce5b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SELL"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1b05276b-0392-4533-9e8d-5344ee9a31e9",
+      "name": "BUY or SELL",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1888,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://paper-api.alpaca.markets/v2/orders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "APCA-API-KEY-ID"
+            },
+            {
+              "name": "APCA-API-SECRET-KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"symbol\": \"{{ $json.symbol }}\",\n  \"qty\": {{ $json.qty }},\n  \"side\": \"buy\",\n  \"type\": \"market\",\n  \"time_in_force\": \"day\"\n}",
+        "options": {}
+      },
+      "id": "d5cd651a-0517-4855-b481-a29017961c70",
+      "name": "Place BUY Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2272,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://paper-api.alpaca.markets/v2/orders",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "APCA-API-KEY-ID"
+            },
+            {
+              "name": "APCA-API-SECRET-KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"symbol\": \"{{ $json.output.symbol }}\",\n  \"qty\": \"{{ $json.output.qty }}\",\n  \"side\": \"sell\",\n  \"type\": \"market\",\n  \"time_in_force\": \"day\"\n}",
+        "options": {}
+      },
+      "id": "db98249b-f03b-4026-89e3-8d6ec4cb5394",
+      "name": "Place SELL Order",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2288,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const order  = $input.first().json;\nconst ai     = $input.first().json.aiOutput || {};\nconst side   = order.side.toUpperCase();\nconst emoji  = side === 'BUY' ? '🟢' : '🔴';\n\nreturn [{ json: {\n  // Order data from Alpaca\n  order_id:         order.id,\n  symbol:           order.symbol,\n  side:             side,\n  qty:              order.qty,\n  status:           order.status,\n  submitted_at:     order.submitted_at,\n  filled_at:        order.filled_at        ?? 'pending',\n  filled_price:     order.filled_avg_price ?? 'pending',\n  stop_loss:        order.legs?.[0]?.stop_price  ?? 'N/A',\n  take_profit:      order.legs?.[1]?.limit_price ?? 'N/A',\n\n  // AI decision data (pass these through from earlier nodes)\n  confidence:       ai.confidence  ?? 'N/A',\n  entry_price:      ai.entry_price ?? 'N/A',\n  reason:           ai.reason      ?? 'N/A',\n\n  // P&L placeholders\n  pnl:              '',\n  outcome:          'PENDING',\n\n  // Email\n  emoji:            emoji,\n  email_subject:    `${emoji} Trade Alert: ${side} ${order.qty} ${order.symbol}`,\n  email_body:       `Trade Executed\\n\\n${emoji} ${side} ORDER\\n\\nSymbol: ${order.symbol}\\nQty: ${order.qty}\\nFilled Price: $${order.filled_avg_price ?? 'pending'}\\nStop Loss: $${order.legs?.[0]?.stop_price ?? 'N/A'}\\nTake Profit: $${order.legs?.[1]?.limit_price ?? 'N/A'}\\nConfidence: ${ai.confidence ?? 'N/A'}\\nReason: ${ai.reason ?? 'N/A'}\\nOrder ID: ${order.id}`\n}}];"
+      },
+      "id": "7bd761b2-0896-4b6b-a830-d12fabed1d4f",
+      "name": "Format Order Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2576,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "subject": "=Daily Report ",
+        "emailType": "text",
+        "message": "={{ $('Gemini Report Writer').item.json.content.parts[1].text }}",
+        "options": {}
+      },
+      "id": "cb9a7a26-3bc9-4fff-adce-5b32045edb0d",
+      "name": "Send Gmail Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        304
+      ],
+      "webhookId": "1d836271-ae96-4e0f-a169-88e322d9d836",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "fPVTIqyX8evYxIBK",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2368,
+        208
+      ],
+      "id": "65a6cff1-6036-4dbe-a824-67c0f8944e4c",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        912
+      ],
+      "id": "7cbff8cf-3337-4129-b2d0-631fd8700304",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "BI1jTrGltmTeZz6o",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"action\": \"buy\",\n  \"symbol\": \"SPY\",\n  \"confidence\": 0.8,\n  \"qty\": 5,\n  \"entry_price\": 450.00,\n  \"stop_loss\": 449.50,\n  \"take_profit\": 451.00,\n  \"reason\": \"one sentence\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        864
+      ],
+      "id": "a8e9daab-d322-4197-b2a3-35cf05627924",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        16,
+        720
+      ],
+      "id": "21c8ff48-fb6b-4bf2-bcbd-652eb6561a56",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://data.alpaca.markets/v2/stocks/AAPL/quotes/latest",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "APCA-API-SECRET-KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        720
+      ],
+      "id": "378698ed-c288-4dda-9067-daec3f0f7f9e",
+      "name": "(Fetch AAPL Quote",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nIZP5lWb9ki6cm80",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const q = $input.first().json.quote;\n\nreturn [{\n  json: {\n    body: {\n      symbol: \"AAPL\",\n      bp: q.bp,\n      ap: q.ap,\n      bs: q.bs,\n      as: q.as,\n      lp: q.ap,\n      timestamp: q.t\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        720
+      ],
+      "id": "14c00bf2-0f99-4e60-a3ab-445152f221d6",
+      "name": "Format Quote"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze this real-time quote and decide: BUY, SELL, or HOLD.\n\nSymbol:     {{ $json.body.symbol }}\nBid:        {{ $json.body.bp }}\nAsk:        {{ $json.body.ap }}\nBid Size:   {{ $json.body.bs }}\nAsk Size:   {{ $json.body.as }}\nLast Price: {{ $json.body.lp }}\nSpread:     {{ ($json.body.ap - $json.body.bp).toFixed(4) }}\nBid/Ask Ratio: {{ ($json.body.bs / $json.body.as).toFixed(2) }}\nTime (UTC): {{ $json.body.timestamp }}\n\nSignal hints:\n- Spread > 0.05 = avoid (too wide for scalp)\n- Bid size > Ask size = buying pressure → lean BUY\n- Ask size > Bid size = selling pressure → lean SELL\n- Use Last Price as your entry_price base\n\nReturn ONLY the JSON object. No explanation. No markdown.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a professional scalp trading AI executing real paper trades via Alpaca Markets.\n\nSTRICT RULES:\n- US market hours ONLY: 9:30 AM – 4:00 PM ET. If outside hours, return action \"hold\".\n- Max 10 shares per trade.\n- Scalp logic only: tight stops, quick targets, small spreads.\n- Avoid HOLD unless no clear direction or outside market hours.\n- If signal is slightly bullish/bearish, still allow trade with lower confidence.\n- You MUST return ONLY a raw JSON object. No markdown, no explanation, no preamble, no trailing commas.\n- All JSON keys must be in double quotes.\n- Numbers must be plain floats, not strings.\n\nPRICE LOGIC ENFORCEMENT (non-negotiable):\n- BUY:  stop_loss < entry_price < take_profit\n- SELL: take_profit < entry_price < stop_loss\n- HOLD: set entry_price = last_price, stop_loss = 0, take_profit = 0, qty = 0\n\nCONFIDENCE RULES:\n- Only act (BUY/SELL) if confidence >= 0.55\n- If confidence < 0.55, return action = \"hold\"\n\nSCALP SIZING RULES:\n- stop_loss must be within 0.3% of entry_price\n- take_profit must be at least 2x the stop distance (1:2 risk/reward minimum)\n- qty must be between 1 and 5 (integer only)\n\nOUTPUT SCHEMA — return exactly these fields, nothing else:\n{\n  \"action\": \"buy\" | \"sell\" | \"hold\",\n  \"symbol\": \"<ticker from input>\",\n  \"confidence\": <0.0 – 1.0>,\n  \"qty\": <integer 1–5>,\n  \"entry_price\": <float>,\n  \"stop_loss\": <float>,\n  \"take_profit\": <float>,\n  \"reason\": \"<max 12 words, describe signal>\"\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1008,
+        720
+      ],
+      "id": "8eb30c06-37b6-42cc-b258-0b574bec122e",
+      "name": "Gemini Scalp Analyst"
+    },
+    {
+      "parameters": {
+        "jsCode": "const workflowStaticData = $getWorkflowStaticData('global');\nconst current = $input.first().json.output;\n\nconst lastAction   = workflowStaticData.lastAction   || '';\nconst lastSymbol   = workflowStaticData.lastSymbol   || '';\nconst lastActioned = workflowStaticData.lastActioned || 0;\n\nconst now          = Date.now();\nconst cooldownMs   = 5 * 60 * 1000; // 5 minute cooldown per symbol\nconst timeSinceLast = now - lastActioned;\n\n// Block if same action+symbol within cooldown window\nif (\n  current.action === lastAction &&\n  current.symbol === lastSymbol &&\n  timeSinceLast < cooldownMs\n) {\n  // Return empty — stops the flow here\n  return [];\n}\n\n// Save new state\nworkflowStaticData.lastAction   = current.action;\nworkflowStaticData.lastSymbol   = current.symbol;\nworkflowStaticData.lastActioned = now;\n\nreturn [{ json: $input.first().json }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        704
+      ],
+      "id": "b2b2fa88-af5c-4635-8dad-84fbc2915bad",
+      "name": "Cooldown Filter"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\n\nconst entry = parseFloat(d.body?.ap); // always use ASK for BUY\nconst stop   = parseFloat(d.output?.stop_loss);\nconst tp     = parseFloat(d.output?.take_profit);\nconst qty    = parseInt(d.output?.qty);\nconst symbol = d.output?.symbol || d.symbol;\n\n// BUY bracket rules:\n// stop_loss MUST be below entry\n// take_profit MUST be above entry\nconst fixedStop = stop < entry \n  ? parseFloat(stop.toFixed(2)) \n  : parseFloat((entry * 0.998).toFixed(2));\n\nconst fixedTp = tp > entry \n  ? parseFloat(tp.toFixed(2)) \n  : parseFloat((entry * 1.004).toFixed(2));\n\n// Ensure minimum $0.10 gap\nconst finalTp = (fixedTp - fixedStop) < 0.10\n  ? parseFloat((fixedStop + 0.10).toFixed(2))\n  : fixedTp;\n\n// Risk/reward metrics\nconst stopDistance   = parseFloat((entry - fixedStop).toFixed(2));\nconst rewardDistance = parseFloat((finalTp - entry).toFixed(2));\nconst riskRewardRatio = parseFloat((rewardDistance / stopDistance).toFixed(2));\nconst maxRisk        = parseFloat((stopDistance * qty).toFixed(2));\nconst maxReward      = parseFloat((rewardDistance * qty).toFixed(2));\n\nreturn [{ json: {\n  // Order fields (used by Place BUY Order node)\n  symbol:           symbol,\n  qty:              qty,\n  entry_price:      parseFloat(entry.toFixed(2)),\n  stop_loss:        fixedStop,\n  take_profit:      finalTp,\n\n  // AI decision fields (for logging)\n  action:           d.output?.action      ?? 'buy',\n  confidence:       d.output?.confidence  ?? null,\n  reason:           d.output?.reason      ?? '',\n\n  // Risk metrics (for analysis)\n  stop_distance:    stopDistance,\n  reward_distance:  rewardDistance,\n  risk_reward:      riskRewardRatio,\n  max_risk_usd:     maxRisk,\n  max_reward_usd:   maxReward,\n\n  // Quote data at time of signal (for analysis)\n  bid:              d.body?.bp ?? null,\n  ask:              d.body?.ap ?? null,\n  bid_size:         d.body?.bs ?? null,\n  ask_size:         d.body?.as ?? null,\n  spread:           d.body?.ap && d.body?.bp \n                      ? parseFloat((d.body.ap - d.body.bp).toFixed(4)) \n                      : null,\n\n  // Timestamp\n  signal_time:      d.body?.timestamp ?? new Date().toISOString()\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        720
+      ],
+      "id": "42775b68-8154-4dfe-b71a-f6144fdd6998",
+      "name": "BUY Price Validator"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23,
+              "triggerAtMinute": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        112,
+        208
+      ],
+      "id": "d74160bb-35eb-464f-9bca-dd69d056c6fc",
+      "name": "End-of-Day Report"
+    },
+    {
+      "parameters": {
+        "url": "https://paper-api.alpaca.markets/v2/account/portfolio/history",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "period",
+              "value": "1D"
+            },
+            {
+              "name": "timeframe",
+              "value": "1H"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "APCA-API-SECRET-KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        336,
+        304
+      ],
+      "id": "4169e4e6-5cef-4ce8-a71b-e9f6ed1f5ce6",
+      "name": "Fetch Today's Orders",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nIZP5lWb9ki6cm80",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://paper-api.alpaca.markets/v2/orders",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "=filled"
+            },
+            {
+              "name": "limi",
+              "value": "100"
+            },
+            {
+              "name": "after",
+              "value": "2026-04-22T00:00:00Z"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "APCA-API-SECRET-KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        336,
+        112
+      ],
+      "id": "32967085-9c74-4d74-998b-587f4a8421be",
+      "name": "Fetch Portfolio History",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "nIZP5lWb9ki6cm80",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const orders = $input.all().map(i => i.json);\n\nreturn orders.map(o => {\n  const filledAt = new Date(o.filled_at);\n  \n  return {\n    json: {\n      // Trade Log columns\n      date: filledAt.toLocaleDateString('en-US', { timeZone: 'America/New_York' }),\n      time_et: filledAt.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit' }),\n      symbol: o.symbol,\n      side: o.side.toUpperCase(),\n      qty: parseFloat(o.filled_qty),\n      fill_price: parseFloat(o.filled_avg_price).toFixed(3),\n      order_value: (parseFloat(o.filled_avg_price) * parseFloat(o.filled_qty)).toFixed(2),\n      stop_loss: 'N/A',\n      take_profit: 'N/A',\n      order_id: o.id,\n      status: o.status\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        112
+      ],
+      "id": "911c7ae8-0ee4-455d-a995-a325a3bc5d70",
+      "name": "Format Trade Log"
+    },
+    {
+      "parameters": {
+        "jsCode": "const portfolio = $input.first().json;\n\nconst equityArr = portfolio.equity;\nconst plArr = portfolio.profit_loss;\nconst lastIdx = equityArr.length - 1;\n\nconst netPnl = plArr[lastIdx];\nconst netPnlPct = (portfolio.profit_loss_pct[lastIdx] * 100).toFixed(2);\nconst bestEquity = Math.max(...equityArr);\nconst worstEquity = Math.min(...equityArr);\nconst biggestSwing = (bestEquity - worstEquity).toFixed(2);\n\nreturn [{\n  json: {\n    date: portfolio.base_value_asof,\n    starting_equity: equityArr[0].toFixed(2),\n    ending_equity: equityArr[lastIdx].toFixed(2),\n    net_pnl: netPnl.toFixed(2),\n    net_pnl_pct: netPnlPct + '%',\n    best_equity: bestEquity.toFixed(2),\n    worst_equity: worstEquity.toFixed(2),\n    biggest_swing: biggestSwing,\n    num_trades: null,         // ⚠️ not available here — comes from Trades node\n    total_bought: null,       // ⚠️ not available here — comes from Trades node\n    total_sold: null,         // ⚠️ not available here — comes from Trades node\n    result: netPnl >= 0 ? '✅ Profit' : '❌ Loss'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        304
+      ],
+      "id": "bef41d28-0ce4-4f3d-8e91-915bdfb58aeb",
+      "name": "Calculate Daily Stats"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "==Analyze this trading account data for today and write a short performance report:\n\nDate: {{ $json.date }}\nStarting Balance: ${{ $json.starting_equity }}\nEnding Balance: ${{ $json.ending_equity }}\nNet P&L: ${{ $json.net_pnl }} ({{ $json.net_pnl_pct }})\nBest Equity Reached: ${{ $json.best_equity }}\nWorst Equity Reached: ${{ $json.worst_equity }}\nBiggest Intraday Swing: ${{ $json.biggest_swing }}\nResult: {{ $json.result }}"
+            },
+            {
+              "content": "You are a trading performance analyst. When given account data, you write a short, clear daily report. \n\nRules:\n- Keep it under 10 lines\n- Use plain numbers, no fluff\n- Always mention how much was lost or gained in dollars and percent\n- Mention the best and worst points of the day\n- End with one honest sentence about what this means for the bot\n\nFormat exactly like this:\n\n📊 REPORT — [date]\n\n💰 Result: [✅ Profit / ❌ Loss]\n- Started: $X → Ended: $X\n- Net P&L: $X ([X]%)\n- Best point today: $X | Worst point: $X  \n- Intraday swing: $X\n\n🧠 Assessment: [one honest sentence about today's performance]",
+              "role": "model"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        304
+      ],
+      "id": "d5c90a8b-73b0-4fe5-b666-739ad867e665",
+      "name": "Gemini Report Writer"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1oJUVuhEe77I4B17OaK0P49wtcXIP9OC6YOwYt7r6oeo/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1804005809,
+          "mode": "list",
+          "cachedResultName": "Trade Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1oJUVuhEe77I4B17OaK0P49wtcXIP9OC6YOwYt7r6oeo/edit#gid=1804005809"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.date }}",
+            "Time (ET) ": "={{ $json.time_et }}",
+            "Symbol": "={{ $json.symbol }}",
+            "Side": "={{ $json.side }}",
+            "Qty": "={{ $json.qty }}",
+            "Fill Price": "={{ $json.fill_price }}",
+            "Order Value ($)": "={{ $json.order_value }}",
+            "Stop Loss": "={{ $json.stop_loss }}",
+            "Take Profit": "={{ $json.take_profit }}",
+            "Status": "={{ $json.status }}",
+            "Order ID": "={{ $json.order_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Time (ET) ",
+              "displayName": "Time (ET) ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Symbol",
+              "displayName": "Symbol",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Side",
+              "displayName": "Side",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Qty",
+              "displayName": "Qty",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Fill Price",
+              "displayName": "Fill Price",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Order Value ($)",
+              "displayName": "Order Value ($)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Stop Loss",
+              "displayName": "Stop Loss",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Take Profit",
+              "displayName": "Take Profit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        848,
+        112
+      ],
+      "id": "d7cbc0f6-2c67-4f9b-ab47-884ebe53386e",
+      "name": "Trade Log",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "jNRg3Q4qOf0GE5Vf",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1oJUVuhEe77I4B17OaK0P49wtcXIP9OC6YOwYt7r6oeo/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 2017123258,
+          "mode": "list",
+          "cachedResultName": "Daily Summary",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1oJUVuhEe77I4B17OaK0P49wtcXIP9OC6YOwYt7r6oeo/edit#gid=2017123258"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $('Calculate Daily Stats').item.json.date }}",
+            "Starting Equity": "={{ $('Calculate Daily Stats').item.json.starting_equity }}",
+            "Ending Equity": "={{ $('Calculate Daily Stats').item.json.ending_equity }}",
+            "Net P&L ($)": "={{ $('Calculate Daily Stats').item.json.net_pnl }}",
+            "Net P&L (%)": "={{ $('Calculate Daily Stats').item.json.net_pnl_pct }}",
+            "Best Equit": "={{ $('Calculate Daily Stats').item.json.best_equity }}",
+            "Worst Equity": "={{ $('Calculate Daily Stats').item.json.worst_equity }}",
+            "Biggest Swing ($": "={{ $('Calculate Daily Stats').item.json.biggest_swing }}",
+            "Total Bought ($)": "={{ $('Calculate Daily Stats').item.json.total_bought }}",
+            "Total Sold ($)": "={{ $('Calculate Daily Stats').item.json.total_sold }}",
+            "Result": "={{ $('Calculate Daily Stats').item.json.result }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Starting Equity",
+              "displayName": "Starting Equity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Ending Equity",
+              "displayName": "Ending Equity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Net P&L ($)",
+              "displayName": "Net P&L ($)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Net P&L (%)",
+              "displayName": "Net P&L (%)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Best Equit",
+              "displayName": "Best Equit",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Worst Equity",
+              "displayName": "Worst Equity",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Biggest Swing ($",
+              "displayName": "Biggest Swing ($",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Total Bought ($)",
+              "displayName": "Total Bought ($)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Total Sold ($)",
+              "displayName": "Total Sold ($)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Result",
+              "displayName": "Result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1136,
+        304
+      ],
+      "id": "13abe57b-749e-4aae-87ab-926c118fa815",
+      "name": "Daily Summary",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "jNRg3Q4qOf0GE5Vf",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "path": "get-decision",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1904,
+        208
+      ],
+      "id": "9bd6bb31-afe2-4701-994d-563606372b8e",
+      "name": "Get Last Decision",
+      "webhookId": "867a0004-7d9c-4333-a619-08cd06313cd3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const workflowStaticData = $getWorkflowStaticData('global');\nconst decision = workflowStaticData.lastDecision || {\n  action: \"HOLD\",\n  symbol: \"SPY\", \n  confidence: 0.5,\n  reason: \"No decision yet\",\n  timestamp: \"\"\n};\nreturn [{ json: decision }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2128,
+        208
+      ],
+      "id": "39383ad8-d434-45ac-8df2-6a082b4b0a58",
+      "name": "Read Last Decision"
+    },
+    {
+      "parameters": {
+        "content": "# AI Scalp Trade Agent — How It Works\n\n\n* This workflow is a fully automated scalp trading bot that runs 24/7 and trades US stocks using real-time Alpaca data and Gemini AI decisions.\n\n\n## LIVE TRADING LOOP (every 30 second):\n\n* A schedule triggers every second and first checks if US market hours are active (9:30 AM – 4:00 PM ET). Outside hours, nothing happens.\n\n* If the market is open, it fetches a live AAPL quote from Alpaca REST API.\nThe quote (bid, ask, spread, sizes, last price) is sent to a Gemini AI Agent which returns a structured JSON decision: BUY, SELL, or HOLD with a confidence score, quantity, entry price, stop loss, and take profit.\n\n* A 5-condition Guardrail Check filters out weak signals (confidence < 0.6, bad qty, invalid prices).\n\n* A Cooldown Filter blocks the same signal from repeating within 5 minutes to prevent over-trading.\n\n* The decision routes to either BUY or SELL. For BUY orders, prices are validated and corrected before the order is placed. Orders go to Alpaca Paper Trading (no real money).\n\n\n\n\n## END-OF-DAY REPORT (daily at 11:02 PM Riyadh):\n\nAfter the US market closes, a second scheduler fires. It pulls all filled orders and the full portfolio equity curve from Alpaca, logs every trade to Google Sheets (Trade Log tab), computes daily P&L stats, sends those stats to Gemini which writes a short performance report, saves the summary to Google Sheets (Daily Summary tab), and emails the full report to your Gmail.\n\n## SETUP REQUIREMENTS:\n\n* Google Gemini API key connected via PaLM credential\n* Alpaca paper trading API key + secret in all HTTP Request headers\n* Gmail OAuth2 credential connected to Send Gmail Alert node\n* Google Sheets OAuth2 credential connected to both Append row nodes\n* Workflow must be set to Active to run on schedule\n\nCurrently trading: AAPL in paper mode. To add more symbols, duplicate the Schedule Trigger → HTTP Request → quote format chain and connect to the same AI Agent.",
+        "height": 832,
+        "width": 768
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -864,
+        48
+      ],
+      "typeVersion": 1,
+      "id": "7e0706d5-e629-4044-8958-0203dd63bb0c",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5d2c6318-97ac-4df7-a113-b901eac3e9aa",
+              "leftValue": "={{ new Date().toLocaleString(\"en-US\", {timeZone: \"America/New_York\", hour: \"2-digit\", hour12: false}).padStart(2,\"0\") }}",
+              "rightValue": 9,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            },
+            {
+              "id": "bfba769a-ad97-40ef-a63e-6a89f66e856f",
+              "leftValue": "={{ new Date().toLocaleString(\"en-US\", {timeZone: \"America/New_York\", hour: \"2-digit\", hour12: false}).padStart(2,\"0\") }}",
+              "rightValue": 16,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        720
+      ],
+      "id": "d77bcd45-2d25-4c9a-b62a-5f1370476577",
+      "name": "If (Market Hours Check)"
+    },
+    {
+      "parameters": {
+        "content": "# DAILY REPORTING #\n## At 11:02 PM Riyadh time, generate a full daily performance report ##",
+        "height": 512,
+        "width": 1598,
+        "color": 4
+      },
+      "id": "2183c025-da77-4fb6-a6d6-54f6d15051a1",
+      "name": "Sticky Note2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## TRIGGER & DATA FETCH ##\n### Every second, check if the market is open, then grab a live quote ###",
+        "height": 352,
+        "width": 826,
+        "color": 6
+      },
+      "id": "0426068c-5667-454b-aafd-bb5801c0547b",
+      "name": "Sticky Note UpdateSlot Webhook",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        608
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## AI DECISION ENGINE ##\n### Send the quote to Gemini, get a structured BUY/SELL/HOLD decision ###",
+        "height": 416,
+        "width": 602,
+        "color": 6
+      },
+      "id": "e400a225-4849-4673-8274-6e91ef41d30c",
+      "name": "Sticky Note UpdateSlot Webhook1",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        816,
+        608
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "##  GUARDRAILS & COOLDOWN ##\n### Filter out bad signals and prevent over-trading ###",
+        "height": 352,
+        "width": 362,
+        "color": 6
+      },
+      "id": "cf0974b7-a7bc-410c-9aca-046e4f934a27",
+      "name": "Sticky Note UpdateSlot Webhook2",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1440,
+        608
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "## ORDER EXECUTION ##\n### Route to BUY or SELL, validate prices, place the order ###",
+        "height": 464,
+        "width": 970,
+        "color": 6
+      },
+      "id": "98cc86c2-3ef4-4b9f-9f13-4e99e99e25ca",
+      "name": "Sticky Note UpdateSlot Webhook3",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1824,
+        528
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "content": "# DECISION INSPECTOR # \n## Optional: check what the last AI decision was via webhook\" ##",
+        "height": 368,
+        "width": 864,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1776,
+        48
+      ],
+      "typeVersion": 1,
+      "id": "c7736588-e115-4127-820f-cdbd7b881eec",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Guardrail Check": {
+      "main": [
+        [
+          {
+            "node": "Cooldown Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BUY or SELL": {
+      "main": [
+        [
+          {
+            "node": "BUY Price Validator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Place SELL Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place BUY Order": {
+      "main": [
+        [
+          {
+            "node": "Format Order Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Place SELL Order": {
+      "main": [
+        [
+          {
+            "node": "Format Order Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Gemini Scalp Analyst",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Gemini Scalp Analyst",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "If (Market Hours Check)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "(Fetch AAPL Quote": {
+      "main": [
+        [
+          {
+            "node": "Format Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Quote": {
+      "main": [
+        [
+          {
+            "node": "Gemini Scalp Analyst",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Scalp Analyst": {
+      "main": [
+        [
+          {
+            "node": "Guardrail Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cooldown Filter": {
+      "main": [
+        [
+          {
+            "node": "BUY or SELL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BUY Price Validator": {
+      "main": [
+        [
+          {
+            "node": "Place BUY Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "End-of-Day Report": {
+      "main": [
+        [
+          {
+            "node": "Fetch Portfolio History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Today's Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Today's Orders": {
+      "main": [
+        [
+          {
+            "node": "Calculate Daily Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Portfolio History": {
+      "main": [
+        [
+          {
+            "node": "Format Trade Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Trade Log": {
+      "main": [
+        [
+          {
+            "node": "Trade Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Gemini Report Writer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Report Writer": {
+      "main": [
+        [
+          {
+            "node": "Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Last Decision": {
+      "main": [
+        [
+          {
+            "node": "Read Last Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Last Decision": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If (Market Hours Check)": {
+      "main": [
+        [
+          {
+            "node": "(Fetch AAPL Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8dff2533-c0ba-4b5b-83f6-7f7f386fa4f7",
+  "meta": {
+    "instanceId": "93735fe38c4cdf7226f6d280e0cd94a40d48705dfad646c2c56fa59492bd2285"
+  },
+  "id": "iyvN1ulfSaw82OZy",
+  "tags": []
+}
