@@ -21,6 +21,21 @@ An n8n automation that takes a long-form video, transcribes it, and produces sub
 - **Telegram API** — completion notifications
 - **Nginx** — serves the upload dashboard and file downloads
 
+## Workflow
+
+Full canvas:
+
+![Full workflow](./Workflow.png)
+
+Broken into parts for readability:
+
+![Section 1](./Section_1.png)
+![Section 2](./Section_2.png)
+
+## How to use
+
+![How to use](./how-to-use.png)
+
 ## Key challenges solved
 
 - **Long video transcription**: Whisper APIs cap audio length, so video is chunked into 10-minute segments, transcribed in parallel, then merged back together with offset-corrected timestamps and boundary deduplication.
