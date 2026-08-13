@@ -1,0 +1,364 @@
+{
+  "name": "Website Chatbot Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "name": "calendarAgent",
+        "description": "Call this tool for any calendar action.",
+        "workflowId": {
+          "__rl": true,
+          "value": "EhJgOonFmE1aFTcZ",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/EhJgOonFmE1aFTcZ",
+          "cachedResultName": "Calendar Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "FullName": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('FullName', ``, 'string') }}",
+            "CompanyName": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('CompanyName', ``, 'string') }}",
+            "email": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('email', ``, 'string') }}",
+            "service": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('service', ``, 'string') }}",
+            "preferredDateTime": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('preferredDateTime', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "FullName",
+              "displayName": "FullName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "CompanyName",
+              "displayName": "CompanyName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "preferredDateTime",
+              "displayName": "preferredDateTime",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "07b3e457-f1de-4add-886f-de94136a9607",
+      "name": "calendarAgent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [
+        640,
+        576
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "name": "RAGagent",
+        "description": "=Call this tool to get answers for FAQs regarding Kamexa. \nThe input should always be the question you want answered along with the following sessionId - {{ $('When chat message received').item.json.sessionId }}",
+        "workflowId": {
+          "__rl": true,
+          "value": "UOta2XkdbbYVou01",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/UOta2XkdbbYVou01",
+          "cachedResultName": "RAG Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [
+            ""
+          ],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "9981795e-c38b-418f-ba57-4416a7b7b587",
+      "name": "RAGagent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [
+        384,
+        576
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "name": "ticketAgent",
+        "description": "Call this tool to create a support ticket for a human agent to followup on via email. \n\nThe input should be the users name and email address and a snippet of the users request. ",
+        "workflowId": {
+          "__rl": true,
+          "value": "rLNqIzdteuiqYimq",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/rLNqIzdteuiqYimq",
+          "cachedResultName": "Ticket Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "firstName": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('firstName', ``, 'string') }}",
+            "email": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('email', ``, 'string') }}",
+            "description": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('description', ``, 'string') }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "firstName",
+              "displayName": "firstName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "id": "098c3b85-218c-4c4a-aa6d-a31ee9de2bd1",
+      "name": "ticketAgent",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [
+        512,
+        576
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "contextWindowLength": 10
+      },
+      "id": "7dcdd369-fedb-4f1d-9ac2-26e2f5364370",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [
+        256,
+        576
+      ],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are Dan Bot, the helpful, friendly chatbot assistant for Marketing Ladder, a marketing agency. You don’t answer questions yourself, you send every request to the right tool. \n\nAvailable Tools\nRAGagent – Use to answer FAQs and anything about Marketing Ladder.\ncalendarAgent – Use to check availability and book consultations.\nticketAgent – Use when the user wants a human, you don’t have enough info, or you can’t complete the request.\n\n\nCore Capabilities\n1. Answer FAQs\nIf a user asks a question, immediately query the RAGagent.\nNever guess, improvise, or answer on your own.\nNo tool call = no answer.\n\n2. Book Consultations\nIf a user wants to book a consultation, collect the following information:\nFull name, Company Name, Email address, their goal for the consultation, preferred day and time (remember: Chicago timezone, 30-min meetings)\n\nProcess:\n-Check their preferred slot with calendarAgent.\n-If unavailable, offer the closest alternate available times on the same day. \n-Once they pick a slot, confirm all details (name, email, goal, time).\n-After confirmation, use calendarAgent to book and send them confirmation.\nGolden Rule: Never double book. Always check availability first.\n\n3. Escalate to a Human Agent if any of these happen:\n\n-RAGagent can’t find an answer\n-User wants to talk to a human\n-You can’t complete their request\n\nThen:\nAsk if they’d like to be contacted by a human agent. If yes, collect:\nFirst name, Email address, Description of their issue or question\nThen, use ticketAgent to create a support ticket.\n\nRules of Engagement:\n-No improvisation. Tools only.\n-Always clarify if info is missing or unclear.\n-The current date is {{ $now.format('yyyy-MM-dd') }}. You are in the Chicago timezone. Always confirm this when talking about times.\n-Redirect trolls. If someone derails the convo away from Marketing Ladder, steer them back or offer to escalate to a human.\n-Have a friendly, conversational tone of voice, but stick to the point.\n-Default CTA: Always try to book them in for a consultation. That’s your north star.\n"
+        }
+      },
+      "id": "c14ab7ef-bdb2-4e08-973c-c09b76467c36",
+      "name": "Ultimate Website Chatbot Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        320,
+        352
+      ],
+      "typeVersion": 1.7
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        128,
+        576
+      ],
+      "id": "b3f9e35c-abfa-4209-8e31-f27637dafaed",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "BI1jTrGltmTeZz6o",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "message": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chat",
+      "typeVersion": 1.3,
+      "position": [
+        848,
+        352
+      ],
+      "id": "0efc8b62-b2cb-4618-bccf-876f66ff6a33",
+      "name": "Chat",
+      "webhookId": "84ca1fbc-b009-4723-b6fc-d4cf5206de73"
+    },
+    {
+      "parameters": {
+        "public": true,
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -96,
+        352
+      ],
+      "id": "6de97454-d415-4139-a29c-cde77e546ea2",
+      "name": "When chat message received",
+      "webhookId": "c4bf1182-3769-4a9d-9741-007237cbe19f"
+    },
+    {
+      "parameters": {
+        "content": "# 📄 **Website Chatbot Agent**\n\n## ✅ **What it does:**\nFully automated AI chatbot for a marketing agency's website. Answers FAQs from a knowledge base, books consultations on a live calendar, and escalates to a human when needed — no manual intervention required.\n\n\n\n## ⚙️ How it works:\n\n🧭 **Manager Agent (\"Dan Bot\")** — the orchestrator. Never answers directly, only routes. Reads user intent, collects name/email/company/goal/preferred time, and calls the right sub-agent. Defaults to pushing toward booking a consultation, redirects off-topic chat back to services, aware of Chicago timezone/real-time date.\n\n📚 **RAG Agent** — answers FAQs from a connected knowledge base/vector store. Session ID passed on every query to keep context across turns. Only surfaces answers that exist in the docs — no hallucinated responses.\n\n📅 **Calendar Agent** — handles the full booking flow: collects name, company, email, service/goal, and preferred time, checks real availability, offers alternatives if taken, books only after explicit user confirmation. Prevents double-booking.\n\n🎫 **Ticket Agent** — human escalation path. Triggers when RAG can't find an answer, user asks for a human, or the bot hits a dead end. Collects first name, email, and issue description, creates a support ticket for follow-up.\n\n🧠 **Memory** — sliding window of last 10 messages, enough for multi-turn context (e.g. name given early, email given later) without bloating the prompt.\n\n📋 **Trigger:** Webhook-based chat trigger, embeddable on any website.\n\n\n\n\n## 🛠️ **What you need to set up**\n\n🔑 **Gemini API credentials** — add your Google Gemini (PaLM API) key to each agent node (Manager + 3 sub-agents).\n\n📚 **Knowledge base / vector store** — upload the company's docs/FAQs and connect it to the RAG Agent so it has something to retrieve from.\n\n📅 **Calendar connection** — connect your own calendar (e.g. Google Calendar) to the Calendar Agent for real availability checks and booking.\n\n🎫 **Ticketing/email setup** — connect the Ticket Agent to wherever tickets should land (email, helpdesk tool, Sheet, etc.) so a human actually sees escalations.\n\n🌐 **Webhook URL** — expose the chat trigger webhook and embed it in the target website's chat widget.\n\n⏰ **Timezone & business context** — update the Manager Agent's system prompt with the correct timezone and any agency-specific info (services, tone, CTA) if reusing this for a different business.",
+        "height": 928,
+        "width": 800
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -992,
+        192
+      ],
+      "typeVersion": 1,
+      "id": "aff7d115-3f3b-4277-a895-6744910df1eb",
+      "name": "Sticky Note"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RAGagent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ticketAgent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calendarAgent": {
+      "ai_tool": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ultimate Website Chatbot Agent": {
+      "main": [
+        [
+          {
+            "node": "Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Ultimate Website Chatbot Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "634dee5c-2c04-45d8-9baf-da0cab794ff6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "93735fe38c4cdf7226f6d280e0cd94a40d48705dfad646c2c56fa59492bd2285"
+  },
+  "id": "5iHQS6m76T0YNRm6",
+  "tags": []
+}
